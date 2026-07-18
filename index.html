@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R-Hub Casino Simulator</title>
+    <!-- Подключаем официальный скрипт Telegram WebApp -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color, #181818);
+            color: var(--tg-theme-text-color, #ffffff);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .container { width: 100%; max-width: 400px; }
+        .header { display: flex; justify-content: space-between; width: 100%; align-items: center; margin-bottom: 20px; }
+        .balance-box { background: var(--tg-theme-secondary-bg-color, #242424); padding: 15px; border-radius: 12px; font-size: 24px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .balance-box span { color: #fede00; }
+        .btn { background-color: var(--tg-theme-button-color, #248bcf); color: var(--tg-theme-button-text-color, #ffffff); border: none; padding: 15px 20px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 10px; transition: transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-lang { background: transparent; border: 1px solid var(--tg-theme-hint-color, #aaaaaa); color: var(--tg-theme-text-color, #ffffff); padding: 5px 10px; border-radius: 6px; font-size: 14px; width: auto; }
+        .screen { display: none; width: 100%; }
+        .active-screen { display: block; }
+        .input-field { width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #444; background: #2b2b2b; color: #fff; font-size: 16px; }
+        .result { font-size: 18px; font-weight: bold; margin-top: 15px; min-height: 25px; }
+        .win { color: #4caf50; }
+        .lose { color: #f44336; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Шапка приложения -->
+    <div class="header">
+        <h3 id="app-title">R-Hub Simulator</h3>
+        <button class="btn btn-lang" id="lang-toggle" onclick="toggleLanguage()">🌐 EN</button>
+    </div>
+
+    <!-- Главный экран -->
+    <div id="screen-main" class="screen active-screen">
+        <div class="balance-box">
+            <span id="text-balance">Balance:</span> <span id="balance-val">100</span> R$
+        </div>
+        <button class="btn" id="btn-go-game" onclick="changeScreen('screen-game')">🎲 Play Dice</button>
+        <button class="btn" id="btn-go-withdraw" onclick="changeScreen('screen-withdraw')">💸 Withdraw Robux</button>
+    </div>
+
+    <!-- Экран игры -->
+    <div id="screen-game" class="screen">
+        <h2 id="game-title">Dice Game</h2>
+        <p id="game-desc">Bet: 10 R-Coins. Win: 25 R-Coins.</p>
+        <button class="btn" id="btn-roll" onclick="playDice()">🎲 Roll the Dice!</button>
+        <div id="game-result" class="result"></div>
+        <button class="btn" style="background:#444;" id="btn-back-1" onclick="changeScreen('screen-main')">Back</button>
+    </div>
+
+    <!-- Экран вывода -->
+    <div id="screen-withdraw" class="screen">
+        <h2 id="withdraw-title">Withdraw via Game Pass</h2>
+        <input type="number" id="withdraw-amount" class="input-field" placeholder="Amount (min 50)" min="50">
+        <input type="text" id="withdraw-link" class="input-field" placeholder="Roblox Game Pass Link">
+        <button class="btn" style="background:#4caf50;" id="btn-submit-withdraw" onclick="submitWithdraw()">Submit Request</button>
+        <div id="withdraw-result" class="result"></div>
+        <button class="btn" style="background:#444;" id="btn-back-2" onclick="changeScreen('screen-main')">Back</button>
+    </div>
+</div>
+
+<script>
+    // Инициализация Telegram WebApp API
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // Разворачиваем приложение на весь экран
+
+    let currentLang = 'en';
+    let balance = 100;
+
+    // Локализация внутри аппки
+    const locale = {
+        en: {
+            title: "R-Hub Simulator", balance: "Balance:", play: "🎲 Play Dice", withdraw: "💸 Withdraw Robux",
+            g_title: "Dice Game", g_desc: "Bet: 10 R-Coins. Win: 25 R-Coins.", g_btn: "🎲 Roll the Dice!", back: "Back",
+            w_title: "Withdraw via Game Pass", w_btn: "Submit Request", w_amount: "Amount (min 50)", w_link: "Roblox Game Pass Link"
+        },
+        ru: {
+            title: "R-Hub Симулятор", balance: "Баланс:", play: "🎲 Играть в кости", withdraw: "💸 Вывод Робуксов",
+            g_title: "Игра в кости", g_desc: "Ставка: 10 R-Coins. Выигрыш: 25 R-Coins.", g_btn: "🎲 Бросить кубик!", back: "Назад",
+            w_title: "Вывод через Game Pass", w_btn: "Отправить заявку", w_amount: "Сумма (мин. 50)", w_link: "Ссылка на Game Pass"
+        }
+    };
+
+    // Получаем баланс от бэкенда через initData, если настроено, пока ставим дефолт
+    document.getElementById('balance-val').innerText = balance;
+
+    function applyLanguage() {
+        const t = locale[currentLang];
+        document.getElementById('app-title').innerText = t.title;
+        document.getElementById('text-balance').innerText = t.balance;
+        document.getElementById('btn-go-game').innerText = t.play;
+        document.getElementById('btn-go-withdraw').innerText = t.withdraw;
+        document.getElementById('game-title').innerText = t.g_title;
+        document.getElementById('game-desc').innerText = t.g_desc;
+        document.getElementById('btn-roll').innerText = t.g_btn;
+        document.getElementById('withdraw-title').innerText = t.w_title;
+        document.getElementById('btn-submit-withdraw').innerText = t.w_btn;
+        document.getElementById('withdraw-amount').placeholder = t.w_amount;
+        document.getElementById('withdraw-link').placeholder = t.w_link;
+        document.getElementById('btn-back-1').innerText = t.back;
+        document.getElementById('btn-back-2').innerText = t.back;
+        document.getElementById('lang-toggle').innerText = currentLang === 'en' ? '🌐 EN' : '🌐 RU';
+    }
+
+    function toggleLanguage() {
+        currentLang = currentLang === 'en' ? 'ru' : 'en';
+        applyLanguage();
+    }
+
+    function changeScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
+        document.getElementById(screenId).classList.add('active-screen');
+        document.getElementById('game-result').innerText = '';
+        document.getElementById('withdraw-result').innerText = '';
+    }
+
+    // Игровая логика на клиенте с отправкой результата бэкенду
+    function playDice() {
+        if (balance < 10) {
+            alert(currentLang === 'en' ? "Not enough points!" : "Недостаточно поинтов!");
+            return;
+        }
+        balance -= 10;
+        const win = Math.random() > 0.5;
+        const resDiv = document.getElementById('game-result');
+        
+        if (win) {
+            balance += 25;
+            resDiv.className = "result win";
+            resDiv.innerText = currentLang === 'en' ? "🎉 Win! +25 R-Coins" : "🎉 Победа! +25 R-Coins";
+        } else {
+            resDiv.className = "result lose";
+            resDiv.innerText = currentLang === 'en' ? "😢 Loss! -10 R-Coins" : "😢 Проигрыш! -10 R-Coins";
+        }
+        
+        document.getElementById('balance-val').innerText = balance;
+        
+        // Отправляем новые данные боту в чат
+        tg.sendData(JSON.stringify({action: "game_dice", new_balance: balance}));
+    }
+
+    function submitWithdraw() {
+        const amount = parseInt(document.getElementById('withdraw-amount').value);
+        const link = document.getElementById('withdraw-link').value;
+        const resDiv = document.getElementById('withdraw-result');
+
+        if (isNaN(amount) || amount < 50) {
+            alert("Min 50!");
+            return;
+        }
+        if (amount > balance) {
+            alert("Insufficient funds!");
+            return;
+        }
+        if (!link.includes("roblox.com")) {
+            alert("Invalid link!");
+            return;
+        }
+
+        balance -= amount;
+        document.getElementById('balance-val').innerText = balance;
+        resDiv.className = "result win";
+        resDiv.innerText = currentLang === 'en' ? "✅ Success! Sent to admin." : "✅ Успешно! Отправлено админу.";
+
+        // Отправляем данные заявки на бэкенд бота
+        tg.sendData(JSON.stringify({
+            action: "withdraw",
+            amount: amount,
+            link: link,
+            new_balance: balance
+        }));
+    }
+
+    // Авто-определение языка из Телеграма при старте
+    if (tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code === 'ru') {
+        currentLang = 'ru';
+    }
+    applyLanguage();
+</script>
+</body>
+</html>
